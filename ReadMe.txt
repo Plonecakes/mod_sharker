@@ -7,7 +7,8 @@ This is mod_sharker by Plonecakes.
 A homage to Game Shark, I think.
 
 This is a PUBLIC, OPEN SOURCE mod. Feel free to redistribute. ^^
-The source and latest version are available here: https://github.com/Plonecakes/mod_sharker/
+The source and latest version are available here:
+                    https://github.com/Plonecakes/mod_sharker/
 
 Unpack this to your Mabinogi folder (if you want) and inject this with Abyss's
 LoadDLL functionality or whatever you use.
@@ -29,6 +30,8 @@ list multiples, separate the entries with commas and no spaces.
 In patches, you may list multiple search and replace pairs by a specific index.
 This index starts at 1 and counts upwards. The format within the entries is
 simple hex. Spacing is optional but suggested. To use a wildcard, enter ?? instead
-of hex.
+of hex. Also, you may select which memory section to search with the form Section#.
+It will default to the code section. The options are code, data, a section by
+internal name, or a section by index.
 
 The log is created as mod_sharker.log in the Mabinogi folder.
