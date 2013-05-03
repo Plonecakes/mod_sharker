@@ -61,19 +61,23 @@ void RestoreMemory(MemorySegment *mem) {
 	free(mem->data);
 }
 
-bool GetSectionAddress(HMODULE module, unsigned int number, DWORD *address, DWORD *size)
+bool GetSectionAddresses(HMODULE module, std::vector<SectionInfo*> *sections)
 {
 	DWORD base = reinterpret_cast<DWORD>(module);
 
 	IMAGE_DOS_HEADER *dos_header = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
 	IMAGE_NT_HEADERS *nt_header = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos_header->e_lfanew);
-	if (number >= nt_header->FileHeader.NumberOfSections)
-		return false;
 
 	IMAGE_SECTION_HEADER *section = reinterpret_cast<IMAGE_SECTION_HEADER*>(base + dos_header->e_lfanew + sizeof(IMAGE_NT_HEADERS));
-	*address = base + section[number].VirtualAddress;
-	if (size)
-		*size = section[number].Misc.VirtualSize;
+
+	// Retrieve all sections.
+	for(int i = 0; i < nt_header->FileHeader.NumberOfSections; ++i) {
+		SectionInfo *tmp = (SectionInfo*)malloc(sizeof(SectionInfo));
+		swprintf(tmp->name, IMAGE_SIZEOF_SHORT_NAME, L"%hs", section[i].Name);
+		tmp->address = (unsigned char*)(base + section[i].VirtualAddress);
+		tmp->size = section[i].Misc.VirtualSize;
+		sections->push_back(tmp);
+	}
 
 	return true;
 }

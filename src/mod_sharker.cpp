@@ -11,18 +11,15 @@ static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
 
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.1 by Plonecakes\nLog file begin\r\n";
+static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.2 by Plonecakes\nLog file begin\r\n";
 
-unsigned char *text_start;
-DWORD text_size;
 std::map<std::wstring, std::vector<MemorySegment*>> Backups;
+std::vector<SectionInfo*> Sections;
 
 void LoadHooks(HMODULE hModule) {
 	// Find client memory bounds.
-	DWORD tmp_text_start;
-	if (!GetSectionAddress(GetModuleHandle(NULL), 0, &tmp_text_start, &text_size))
-		throw "GetSectionAddress";
-	text_start = reinterpret_cast<unsigned char*>(tmp_text_start);
+	if (!GetSectionAddresses(GetModuleHandle(NULL), &Sections))
+		throw "GetSectionAddresses";
 
 	// Begin log
 	BeginLog();
@@ -121,10 +118,33 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 		// Check if patch is enabled or missing from options.
 		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) == 1) {
 			// That is so. Apply patches.
-			int patch_id = 1, length, rlength;
-			WCHAR key_name[20], search_buffer[2000], replace_buffer[2000];
+			int patch_id = 1, length, rlength, section = 0, j;
+			WCHAR key_name[20], section_buffer[30], search_buffer[2000], replace_buffer[2000];
 			signed short search_binary[1000], replace_binary[1000];
 			for(; true; ++patch_id) {
+				swprintf(key_name, sizeof(key_name), L"Section%i", patch_id);
+				if(GetPrivateProfileString(nbptr, key_name, NULL, section_buffer, sizeof(section_buffer), fullname)) {
+					// Searching a custom section for the patch. By default it searches the code section.
+					// First, check pseudonyms.
+					if(wcscmp(section_buffer, L"code") == 0) section = 0;
+					else if(wcscmp(section_buffer, L"data") == 0 || wcscmp(section_buffer, L"resource") == 0
+						|| wcscmp(section_buffer, L"rsc") == 0 || wcscmp(section_buffer, L"resources") == 0) section = 1;
+					else {
+						// Check given section name.
+						std::vector<SectionInfo*>::iterator i;
+						for(i = Sections.begin(), j = 0; i != Sections.end(); ++i, ++j) {
+							if(wcscmp(section_buffer, (*i)->name)) {
+								section = j;
+								break;
+							}
+						}
+
+						// Last hope is if it is numerical.
+						if(i == Sections.end()) {
+							section = _wtoi(section_buffer);
+						}
+					}
+				}
 				swprintf(key_name, sizeof(key_name), L"Search%i", patch_id);
 				if(GetPrivateProfileString(nbptr, key_name, NULL, search_buffer, sizeof(search_buffer), fullname)) {
 					// There is a patch of this ID. We must parse it and the replacement then patch the client's memory.
@@ -145,7 +165,7 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 
 					// Now backup the code and apply the patch.
 					// TODO: Backup.
-					unsigned char *address = SearchPattern(text_start, text_size, search_binary, length);
+					unsigned char *address = SearchPattern(Sections[section]->address, Sections[section]->size, search_binary, length);
 					if(address) {
 						MemorySegment *mem = (MemorySegment*)malloc(sizeof(MemorySegment));
 						std::wstring key = nbptr;

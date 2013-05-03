@@ -26,9 +26,15 @@ typedef struct _MemorySegment {
 	unsigned char *data;
 } MemorySegment;
 
+typedef struct _SectionInfo {
+	WCHAR name[IMAGE_SIZEOF_SHORT_NAME];
+	unsigned char *address;
+	DWORD size;
+} SectionInfo;
+
 unsigned char *SearchPattern(unsigned char *start, int range, const signed short *pattern, int length);
 void WritePattern(LPVOID address, const signed short *data, SIZE_T size, MemorySegment *mem = NULL);
 void RestoreMemory(MemorySegment *mem);
-bool GetSectionAddress(HMODULE module, unsigned int number, DWORD *address, DWORD *size);
+bool GetSectionAddresses(HMODULE module, std::vector<SectionInfo*> *sections);
 
 #endif
