@@ -11,7 +11,7 @@ static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
 
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.0 by Plonecakes\nLog file begin\r\n";
+static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.1 by Plonecakes\nLog file begin\r\n";
 
 unsigned char *text_start;
 DWORD text_size;
@@ -58,11 +58,15 @@ void LoadHooks(HMODULE hModule) {
 
 		// Iterate through files.
 		hFolder = FindFirstFile(folder, &file);
-		do {
+		while(hFolder) {
 			LoadINI(file.cFileName, token);
-		} while(FindNextFile(hFolder, &file));
+			FindNextFile(hFolder, &file);
+		}
 
-		if((error = GetLastError()) != ERROR_NO_MORE_FILES) {
+		if((error = GetLastError()) == ERROR_INVALID_HANDLE) {
+			LogMessage(L"Directory does not exist");
+		}
+		else if(error != ERROR_NO_MORE_FILES) {
 			LogMessage(L"Error when iterating directory %s: code %i", token, error);
 		}
 		FindClose(hFolder);
@@ -118,8 +122,8 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) == 1) {
 			// That is so. Apply patches.
 			int patch_id = 1, length, rlength;
-			WCHAR key_name[20], search_buffer[200], replace_buffer[200];
-			signed short search_binary[100], replace_binary[100];
+			WCHAR key_name[20], search_buffer[2000], replace_buffer[2000];
+			signed short search_binary[1000], replace_binary[1000];
 			for(; true; ++patch_id) {
 				swprintf(key_name, sizeof(key_name), L"Search%i", patch_id);
 				if(GetPrivateProfileString(nbptr, key_name, NULL, search_buffer, sizeof(search_buffer), fullname)) {

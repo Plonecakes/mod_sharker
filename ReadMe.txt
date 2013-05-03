@@ -7,6 +7,7 @@ This is mod_sharker by Plonecakes.
 A homage to Game Shark, I think.
 
 This is a PUBLIC, OPEN SOURCE mod. Feel free to redistribute. ^^
+The source and latest version are available here: https://github.com/Plonecakes/mod_sharker/
 
 Unpack this to your Mabinogi folder (if you want) and inject this with Abyss's
 LoadDLL functionality or whatever you use.
