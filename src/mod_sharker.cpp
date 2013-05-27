@@ -11,7 +11,7 @@ static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
 
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.2 by Plonecakes\nLog file begin\r\n";
+static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.3 by Plonecakes\nLog file begin\r\n";
 
 std::map<std::wstring, std::vector<MemorySegment*>> Backups;
 std::vector<SectionInfo*> Sections;
@@ -55,12 +55,12 @@ void LoadHooks(HMODULE hModule) {
 
 		// Iterate through files.
 		hFolder = FindFirstFile(folder, &file);
-		while(hFolder) {
+		while(hFolder && hFolder != INVALID_HANDLE_VALUE) {
 			LoadINI(file.cFileName, token);
 			FindNextFile(hFolder, &file);
 		}
 
-		if((error = GetLastError()) == ERROR_INVALID_HANDLE) {
+		if((error = GetLastError()) == ERROR_INVALID_HANDLE || error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) {
 			LogMessage(L"Directory does not exist");
 		}
 		else if(error != ERROR_NO_MORE_FILES) {
