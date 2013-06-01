@@ -4,7 +4,7 @@
 
 void LoadHooks(HMODULE hModule);
 void LoadINI(LPCTSTR filename, LPCTSTR folder = NULL);
-int ParseHex(WCHAR *from, signed short *to);
+int ParseHex(WCHAR *from, signed short *to, WCHAR *title);
 void UnsetHooks();
 void BeginLog();
 void LogMessage(WCHAR *txt, ...);

@@ -11,7 +11,7 @@ static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
 
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 1.3 by Plonecakes\nLog file begin\r\n";
+static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 2.0 by Plonecakes\nLog file begin\r\n";
 
 std::map<std::wstring, std::vector<MemorySegment*>> Backups;
 std::vector<SectionInfo*> Sections;
@@ -116,7 +116,7 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 	while((len = wcslen(nbptr)) > 0) {
 		// Skip options section.
 		// Check if patch is enabled or missing from options.
-		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) == 1) {
+		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) != 0) {
 			// That is so. Apply patches.
 			int patch_id = 1, length, rlength, section = 0, j;
 			WCHAR key_name[20], section_buffer[30], search_buffer[2000], replace_buffer[2000];
@@ -148,23 +148,22 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 				swprintf(key_name, sizeof(key_name), L"Search%i", patch_id);
 				if(GetPrivateProfileString(nbptr, key_name, NULL, search_buffer, sizeof(search_buffer), fullname)) {
 					// There is a patch of this ID. We must parse it and the replacement then patch the client's memory.
-					if((length = ParseHex(search_buffer, search_binary)) < 0) {
+					if((length = ParseHex(search_buffer, search_binary, nbptr)) < 0) {
 						LogMessage(L"Error parsing search code for %s.%s at index %i.", nbptr, key_name, -length);
 						continue;
 					}
 					swprintf(key_name, sizeof(key_name), L"Replace%i", patch_id);
 					GetPrivateProfileString(nbptr, key_name, NULL, replace_buffer, sizeof(replace_buffer), fullname);
-					if((rlength = ParseHex(replace_buffer, replace_binary)) < 0) {
+					if((rlength = ParseHex(replace_buffer, replace_binary, nbptr)) < 0) {
 						LogMessage(L"Error parsing replacement code for %s.%s at index %i.", nbptr, key_name, -rlength);
 						continue;
 					}
 					if(rlength != length) {
-						LogMessage(L"Error parsing patch %s.%i, search and replace must have the same amount of bytes.", nbptr, patch_id);
+						LogMessage(L"Error parsing patch %s.%i, search and replace must have the same amount of bytes. Search had %i, replace had %i.", nbptr, patch_id, length, rlength);
 						continue;
 					}
 
 					// Now backup the code and apply the patch.
-					// TODO: Backup.
 					unsigned char *address = SearchPattern(Sections[section]->address, Sections[section]->size, search_binary, length);
 					if(address) {
 						MemorySegment *mem = (MemorySegment*)malloc(sizeof(MemorySegment));
@@ -187,12 +186,146 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 	free(fullname);
 }
 
-int ParseHex(WCHAR *from, signed short *to) {
+#define CHECK_UNEXPECTED_END if(*from == L'\0') {\
+	LogMessage(L"Line terminated before closing the variable.");\
+	return -(begin - orig);\
+}
+
+int ParseHex(WCHAR *from, signed short *to, WCHAR *title) {
 	WCHAR *orig = from, hex[] = L"\0\0", *error_point;
 	signed short *orig_to = to;
 	for(; *from != L'\0'; ++from) {
 		if(*from == L' ') {
 			continue;
+		}
+		else if(*from == L'<') {
+			// Format for variables:
+			// <Name:Size or Default>
+			// <Name:Size map {key:val, ...} or Default>
+			// <Name:Size -= Offset or Default>
+			// <Name:Size += Offset or Default>
+			// Size is required, Name and "or Default" are not. If Name is omitted, the colon must still exist,
+			// and the current mod name is assumed. Name may refer to entries in Options directly, or in relative
+			// wildcards with the form ?#@ID.C.
+			// # refers to the Search#.
+			// ID is the index of the wildcard within that line, based at 0. If omitted, 0 is assumed.
+			// C is the number of wildcards to read. If omitted, Size is used.
+			// The wildcards read from Search do not have to be sequential, so be wary.
+			WCHAR *begin = from, name[50], *p, sizebuf[10];
+			int value, size;
+
+			// Name ends at : only.
+			for(p = name, ++from; *from != L':' && *from != L'\0'; ++from, ++p) *p = *from;
+			*p = L'\0';
+			CHECK_UNEXPECTED_END
+
+			// For size, accept all numbers only.
+			for(p = sizebuf, ++from; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+			*p = L'\0';
+			size = _wtoi(sizebuf);
+
+			// Skip trailing spaces.
+			for(; *from == L' '; ++from);
+			CHECK_UNEXPECTED_END
+
+			// Fetch the value from the name. If it exists, check mapping or offset.
+			if(*name != L'\0') value = GetPrivateProfileInt(INI_HEADER, name, -1, INI_FILE_NAME);
+			else value = GetPrivateProfileInt(INI_HEADER, title, -1, INI_FILE_NAME);
+
+			if(value > -1) {
+				if(wcsncmp(from, L"map", 3) == 0) {
+					bool unfound = true;
+					WCHAR number[10];
+					int from_number, to_number;
+					// Map form... first read until the opening brace.
+					for(from += 3; *from != L'{'; ++from);
+					for(++from; *from != L'}';) {
+						// Collect "from" number.
+						for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+						*p = L'\0';
+						from_number = _wtoi(number);
+
+						// Ignore midsection.
+						for(; *from == L' ' || *from == L'\t' || *from == L':' || *from == L'='; ++from);
+						if(*from == L',' || *from == L'}' || *from == L'\0') {
+							LogMessage(L"Unexpected end of map entry.");
+							return -(from - orig);
+						}
+						else if(*from < L'0' || *from > L'9') {
+							LogMessage(L"Unexpected character '%c'.", *from);
+							return -(from - orig);
+						}
+
+						// Collect "to" number.
+						for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+						*p = L'\0';
+						to_number = _wtoi(number);
+
+						// Check and map number.
+						if(value == from_number) {
+							value = to_number;
+							unfound = false;
+							break;
+						}
+
+						// Move to the beginning of the next entry.
+						for(; *from == L' ' || *from == L','; ++from);
+						if(*from != L'}' && (*from < L'0' || *from > L'9')) {
+							LogMessage(L"Unexpected character '%c'.", *from);
+							return -(from - orig);
+						}
+					}
+
+					// Check if a mapping was found.
+					if(unfound) {
+						LogMessage(L"Not a valid option for %s, please see the mod's documentation.", *name == L'\0' ? title : name);
+						return -(begin - orig);
+					}
+				}
+				else if(from[1] == L'=') {
+					WCHAR sign = *from, offset[20];
+					// Ignore spaces.
+					for(from += 2; *from == L' '; ++from);
+
+					// Read in the offset.
+					for(p = offset; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+
+					// Apply offset.
+					if(sign == L'-') value -= _wtoi(offset);
+					else if(sign == L'+') value += _wtoi(offset);
+					else {
+						LogMessage(L"Unknown offset method %c.", sign);
+						return -(begin - orig);
+					}
+				}
+			}
+			else {
+				WCHAR number[20];
+				// Move to "or" position.
+				for(; *from != L'\0' && *from != L'o' && from[1] != L'r'; ++from);
+
+				// If there is no default given...
+				if(*from == L'\0') {
+					LogMessage(L"You must enter a value for %s, see documentation.", *name == L'\0' ? title : name);
+					return -(begin - orig);
+				}
+
+				// Ignore spaces.
+				for(; *from == L' '; ++from);
+
+				// Collect default value.
+				for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+				*p = L'\0';
+				value = _wtoi(number);
+			}
+
+			// Write out value.
+			memcpy(to, &value, size);
+			to += size;
+
+			// Move to end of variable section.
+			for(; *from != L'\0' && *from != L'>'; ++from);
+			CHECK_UNEXPECTED_END
 		}
 		else if(hex[0] == L'\0') {
 			hex[0] = *from;

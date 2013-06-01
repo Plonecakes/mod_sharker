@@ -34,4 +34,27 @@ of hex. Also, you may select which memory section to search with the form Sectio
 It will default to the code section. The options are code, data, a section by
 internal name, or a section by index.
 
+You may dynamically alter the search or replacement by the use of variables. They
+are placed in the hex string in one of the forms:
+  <Name:Size or Default>
+  <Name:Size map {...} or Default>
+  <Name:Size ?= Offset or Default>
+If Name is omitted, the current section name is used, and the colon must still
+exist. Size is always required, it is the amount of bytes to insert. If you omit
+the "or" and a default value, the entry in options will be required of the user.
+In the map form, you may enter a list of value mappings. The values here are in
+decimal. The format is one of:
+  {1: 2, 3: 4}
+  {1 = 2, 3 = 4}
+Spaces are optional, of course. The left value is the value the user enters, and
+the right value is the value searched for or written. Offset is a value to offset
+by, and the ? in the format must be a method of adjustment, + or -. Again, this
+value is in decimal. An example might be:
+  <UserInput:4 map {1:2,2:34} or 2>
+Where the entry in UserInput will be referenced for the final value that this
+segment is replaced with. If the user enteres UserInput=1 then the value will be
+2, and if it is UserInput=2 then the value with be 34. If the user enters anything
+else, an error will be thrown. If UserInput does not exist, 2 will be assumed. Of
+course, if it is UserInput=0, then the mod will not be enabled.
+
 The log is created as mod_sharker.log in the Mabinogi folder.
