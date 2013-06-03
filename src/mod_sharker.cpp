@@ -11,7 +11,7 @@ static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
 
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 2.0 by Plonecakes\nLog file begin\r\n";
+static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 2.1 by Plonecakes\nLog file begin\r\n";
 
 std::map<std::wstring, std::vector<MemorySegment*>> Backups;
 std::vector<SectionInfo*> Sections;
@@ -119,9 +119,82 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) != 0) {
 			// That is so. Apply patches.
 			int patch_id = 1, length, rlength, section = 0, j;
-			WCHAR key_name[20], section_buffer[30], search_buffer[2000], replace_buffer[2000];
+			WCHAR key_name[20], condition_buffer[2000], section_buffer[30], search_buffer[2000], replace_buffer[2000];
 			signed short search_binary[1000], replace_binary[1000];
 			for(; true; ++patch_id) {
+				swprintf(key_name, sizeof(key_name), L"Condition%i", patch_id);
+				if(GetPrivateProfileString(nbptr, key_name, NULL, condition_buffer, sizeof(condition_buffer), fullname)) {
+					// If there is a condition, we must assure that it is true before continuing.
+					WCHAR *pvariable, *pcomparison, *pvalue, *plogic, *next_token;
+					int variable, value, concat = 0;
+					bool result = true, next_result;
+					pvariable = wcstok_s(condition_buffer, L" ", &next_token);
+					while(true) {
+						if(pvariable == NULL) break;
+						variable = GetPrivateProfileInt(INI_HEADER, pvariable, 1, INI_FILE_NAME);
+
+						pcomparison = wcstok_s(NULL, L" ", &next_token);
+						if(pcomparison == NULL) {
+							LogMessage(L"Error when parsing condition for %s.%s at index %i: no comparison.", nbptr, key_name, pvariable + wcslen(pvariable) + 1 - condition_buffer);
+							result = false;
+							break;
+						}
+
+						pvalue = wcstok_s(NULL, L" ", &next_token);
+						if(pvalue == NULL) {
+							LogMessage(L"Error when parsing condition for %s.%s at index %i: comparison but no value.", nbptr, key_name, pcomparison + wcslen(pcomparison) + 1 - condition_buffer);
+							result = false;
+							break;
+						}
+						value = _wtoi(pvalue);
+
+						if(pcomparison[1] == L'=' && pcomparison[2] == L'\0') {
+							switch(*pcomparison) {
+							case L'=': next_result = variable == value; break;
+							case L'!': next_result = variable != value; break;
+							case L'<': next_result = variable <= value; break;
+							case L'>': next_result = variable >= value; break;
+							default: goto InvalidComparison;
+							}
+						}
+						else if(pcomparison[1] == L'\0') {
+							switch(*pcomparison) {
+							case L'<': next_result = variable < value; break;
+							case L'>': next_result = variable > value; break;
+							default: goto InvalidComparison;
+							}
+						}
+						else {
+							InvalidComparison:
+							LogMessage(L"Error when parsing condition for %s.%s at index %i: invalid comparison.", nbptr, key_name, pcomparison + wcslen(pcomparison) + 1 - condition_buffer);
+							result = false;
+							break;
+						}
+
+						switch(concat) {
+						case 0: result = result && next_result; break;
+						case 1: result = result || next_result; break;
+						case 2: result = (result && !next_result) || (!result && next_result); break;
+						}
+
+						plogic = wcstok_s(NULL, L" ", &next_token);
+						if(plogic == NULL) break;
+						if(wcscmp(plogic, L"&&") == 0 || _wcsicmp(plogic, L"and") == 0) {
+							concat = 0;
+						}
+						else if(wcscmp(plogic, L"||") == 0 || _wcsicmp(plogic, L"or") == 0) {
+							concat = 1;
+						}
+						else if(wcscmp(plogic, L"^^") == 0 || _wcsicmp(plogic, L"xor") == 0) {
+							concat = 2;
+						}
+
+						pvariable = wcstok_s(NULL, L" ", &next_token);
+					}
+					if(!result) {
+						continue;
+					}
+				}
 				swprintf(key_name, sizeof(key_name), L"Section%i", patch_id);
 				if(GetPrivateProfileString(nbptr, key_name, NULL, section_buffer, sizeof(section_buffer), fullname)) {
 					// Searching a custom section for the patch. By default it searches the code section.

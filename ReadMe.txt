@@ -57,4 +57,11 @@ segment is replaced with. If the user enteres UserInput=1 then the value will be
 else, an error will be thrown. If UserInput does not exist, 2 will be assumed. Of
 course, if it is UserInput=0, then the mod will not be enabled.
 
+You may conditionalize the patching of a search and replace by adding a Condition#
+entry to the heading. This can contain a check in the form:
+  Variable ?= Value
+Optionally conjoined by logical operations such as &&, ||, or ^^. The valid
+comparison operators are: ==, !=, <=, >=, <, and >. Delimiting spaces are required.
+Logical operations are processed linearly.
+
 The log is created as mod_sharker.log in the Mabinogi folder.
