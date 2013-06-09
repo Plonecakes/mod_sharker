@@ -4,14 +4,12 @@
 #include "stdafx.h"
 #include "mod_sharker.h"
 #include "patch_lib.h"
+#include "logging.h"
 
-static char* const LOG_FILE_NAME = "mod_sharker.log";
 static LPCTSTR const INI_FILE_NAME = L".\\mod_sharker.ini";
 static LPCTSTR const INI_HEADER = L"Options";
 static LPCTSTR const INI_LOADINI = L"LoadINI";
 static LPCTSTR const INI_LOADFOLDER = L"LoadFolder";
-
-static LPCTSTR const LOG_BEGIN = L"\ufeffmod_sharker version 2.1 by Plonecakes\nLog file begin\r\n";
 
 std::map<std::wstring, std::vector<MemorySegment*>> Backups;
 std::vector<SectionInfo*> Sections;
@@ -225,23 +223,26 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 						LogMessage(L"Error parsing search code for %s.%s at index %i.", nbptr, key_name, -length);
 						continue;
 					}
-					swprintf(key_name, sizeof(key_name), L"Replace%i", patch_id);
-					GetPrivateProfileString(nbptr, key_name, NULL, replace_buffer, sizeof(replace_buffer), fullname);
-					if((rlength = ParseHex(replace_buffer, replace_binary, nbptr)) < 0) {
-						LogMessage(L"Error parsing replacement code for %s.%s at index %i.", nbptr, key_name, -rlength);
-						continue;
-					}
-					if(rlength != length) {
-						LogMessage(L"Error parsing patch %s.%i, search and replace must have the same amount of bytes. Search had %i, replace had %i.", nbptr, patch_id, length, rlength);
-						continue;
-					}
 
 					// Now backup the code and apply the patch.
 					unsigned char *address = SearchPattern(Sections[section]->address, Sections[section]->size, search_binary, length);
 					if(address) {
+						DWORD has_replacement;
+						swprintf(key_name, sizeof(key_name), L"Replace%i", patch_id);
+						if((has_replacement = GetPrivateProfileString(nbptr, key_name, NULL, replace_buffer, sizeof(replace_buffer), fullname))) {
+							if((rlength = ParseHex(replace_buffer, replace_binary, nbptr, (unsigned int)address)) < 0) {
+								LogMessage(L"Error parsing replacement code for %s.%s at index %i.", nbptr, key_name, -rlength);
+								continue;
+							}
+							if(rlength != length) {
+								LogMessage(L"Error parsing patch %s.%i, search and replace must have the same amount of bytes. Search had %i, replace had %i.", nbptr, patch_id, length, rlength);
+								continue;
+							}
+						}
+
 						MemorySegment *mem = (MemorySegment*)malloc(sizeof(MemorySegment));
 						std::wstring key = nbptr;
-						WritePattern(address, replace_binary, length, mem);
+						WritePattern(address, has_replacement ? replace_binary : search_binary, length, mem);
 						Backups[key].push_back(mem);
 						LogMessage(L"Patch %s.%i SUCCESS", nbptr, patch_id);
 					}
@@ -264,12 +265,78 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 	return -(begin - orig);\
 }
 
-int ParseHex(WCHAR *from, signed short *to, WCHAR *title) {
+int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_address, int *from_change) {
 	WCHAR *orig = from, hex[] = L"\0\0", *error_point;
 	signed short *orig_to = to;
 	for(; *from != L'\0'; ++from) {
 		if(*from == L' ') {
 			continue;
+		}
+		else if(from_change != NULL && (*from == L'>' || *from == ',' || *from == L'}')) {
+			*from_change = from - orig;
+			return to - orig_to;
+		}
+		else if(*from == L'$') {
+			// Insert address of a named item.
+			WCHAR *begin = from, name[200], *p, *dot = NULL, *colon = NULL;
+			unsigned int address, index, size = 4;
+			bool absolute = from[1] == L'$';
+
+			if(absolute) ++from;
+			else if(!starting_address) {
+				LogMessage(L"Error during addressing, cannot use relative addresses in search pattern.");
+				return -(from - orig);
+			}
+
+			for(++from, p = name; *from != L' ' && *from != L'\0'; ++from, ++p) {
+				if(*p == L'.') {
+					dot = p;
+					*p = L'\0';
+				}
+				else if(*p == L':') {
+					colon = p;
+					*p = L'\0';
+				}
+				else {
+					*p = *from;
+				}
+			}
+			*p = L'\0';
+
+			// Retrieve size. Default to 4.
+			if(colon) {
+				size = _wtoi(colon + 1);
+			}
+
+			// First check exact names.
+			if(wcscmp(name, L"LogMessage") == 0) {
+				address = (unsigned int)(&LogMessage);
+			}
+
+			// Then check internal stuff.
+			else if(dot != NULL && (index = _wtoi(dot + 1))) {
+				*dot = L'\0';
+				// Do note that this index is of applied patches, rather than actual index.
+				if(index <= Backups[name].size()) {
+					address = (unsigned int)Backups[name][index - 1]->address;
+				}
+				else {
+					LogMessage(L"Error when looking up patch address, index %i out of range.", index);
+					return -(begin - orig);
+				}
+			}
+
+			// TODO: Finally, search the symbols tables.
+
+			// Make address relative.
+			if(!absolute) {
+				address = (signed int)address - ((signed int)starting_address + (to - orig_to) + size);
+			}
+
+			// Output the address.
+			for(BYTE *pi = (BYTE *)&address; size; --size, ++to, ++pi) {
+				*to = (short)(*pi);
+			}
 		}
 		else if(*from == L'<') {
 			// Format for variables:
@@ -324,21 +391,38 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title) {
 							LogMessage(L"Unexpected end of map entry.");
 							return -(from - orig);
 						}
+
+						// Collect "to" number.
+						if(*from == L'x' || *from == L'X') {
+							// Hex form, sequence of bytes.
+							int from_change, tmp = ParseHex(++from, to, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
+							if(tmp < 0) {
+								return tmp - (from - orig);
+							}
+							else {
+								from += from_change;
+								if(value == from_number) {
+									to += tmp;
+									goto VariableEnd;
+								}
+							}
+						}
 						else if(*from < L'0' || *from > L'9') {
 							LogMessage(L"Unexpected character '%c'.", *from);
 							return -(from - orig);
 						}
+						else {
+							// Decimal form.
+							for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+							*p = L'\0';
+							to_number = _wtoi(number);
 
-						// Collect "to" number.
-						for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
-						*p = L'\0';
-						to_number = _wtoi(number);
-
-						// Check and map number.
-						if(value == from_number) {
-							value = to_number;
-							unfound = false;
-							break;
+							// Check and map number.
+							if(value == from_number) {
+								value = to_number;
+								unfound = false;
+								break;
+							}
 						}
 
 						// Move to the beginning of the next entry.
@@ -375,7 +459,10 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title) {
 			else {
 				WCHAR number[20];
 				// Move to "or" position.
-				for(; *from != L'\0' && *from != L'o' && from[1] != L'r'; ++from);
+				for(int open = 0; (*from != L'\0' && *from != L'o' && from[1] != L'r') || open; ++from) {
+					if(*from == L'<') ++open;
+					else if(*from == L'>') --open;
+				}
 
 				// If there is no default given...
 				if(*from == L'\0') {
@@ -384,20 +471,40 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title) {
 				}
 
 				// Ignore spaces.
-				for(; *from == L' '; ++from);
+				for(from += 2; *from == L' '; ++from);
 
 				// Collect default value.
-				for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
-				*p = L'\0';
-				value = _wtoi(number);
+				if(*from == L'x' || *from == L'X') {
+					// Hex form, sequence of bytes.
+					int from_change = 0, tmp = ParseHex(++from, to, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
+					if(tmp < 0) {
+						return tmp - (from - orig);
+					}
+					else {
+						to += tmp;
+						from += from_change;
+					}
+
+					goto VariableEnd;
+				}
+				else {
+					// Decimal form.
+					for(p = number; *from >= L'0' && *from <= L'9'; ++from, ++p) *p = *from;
+					*p = L'\0';
+					value = _wtoi(number);
+				}
 			}
 
 			// Write out value.
-			memcpy(to, &value, size);
-			to += size;
+			for(BYTE *pi = (BYTE *)&value; size; --size, ++to, ++pi) {
+				*to = (short)(*pi);
+			}
 
 			// Move to end of variable section.
-			for(; *from != L'\0' && *from != L'>'; ++from);
+VariableEnd:
+			for(int open = 0; *from != L'\0' && (*from != L'>' || open-- > 0); ++from) {
+				if(*from == L'<') ++open;
+			}
 			CHECK_UNEXPECTED_END
 		}
 		else if(hex[0] == L'\0') {
@@ -445,30 +552,4 @@ void UnsetHooks() {
 
 	// Close the log.
 	CloseLog();
-}
-
-FILE *log_file = NULL;
-void BeginLog() {
-	if((log_file = fopen(LOG_FILE_NAME, "wb")) != NULL) {
-		fwrite(LOG_BEGIN, 2, wcslen(LOG_BEGIN), log_file);
-		fflush(log_file);
-	}
-}
-
-void LogMessage(WCHAR *txt, ...) {
-	if(log_file) {
-		va_list args;
-		va_start(args, txt);
-		vfwprintf(log_file, txt, args);
-		fwrite(L"\r\n", 1, 2, log_file);
-		va_end(args);
-		fflush(log_file);
-	}
-}
-
-void CloseLog() {
-	if(log_file) {
-		fwrite(L"Log file closed\r\n", 2, 18, log_file);
-		fclose(log_file);
-	}
 }

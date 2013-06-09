@@ -75,6 +75,7 @@
     <None Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="logging.h" />
     <ClInclude Include="mod_sharker.h" />
     <ClInclude Include="patch_lib.h" />
     <ClInclude Include="stdafx.h" />
@@ -89,6 +90,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
       </PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="logging.cpp" />
     <ClCompile Include="mod_sharker.cpp" />
     <ClCompile Include="patch_lib.cpp" />
     <ClCompile Include="stdafx.cpp">

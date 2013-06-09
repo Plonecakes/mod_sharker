@@ -43,9 +43,11 @@ If Name is omitted, the current section name is used, and the colon must still
 exist. Size is always required, it is the amount of bytes to insert. If you omit
 the "or" and a default value, the entry in options will be required of the user.
 In the map form, you may enter a list of value mappings. The values here are in
-decimal. The format is one of:
+decimal. However you may use a hexadecimal byte sequence with a preceding x.
+The format is one of:
   {1: 2, 3: 4}
   {1 = 2, 3 = 4}
+  {1: x02 00 00 00, 3: x04 00 00 00}
 Spaces are optional, of course. The left value is the value the user enters, and
 the right value is the value searched for or written. Offset is a value to offset
 by, and the ? in the format must be a method of adjustment, + or -. Again, this
@@ -63,5 +65,10 @@ entry to the heading. This can contain a check in the form:
 Optionally conjoined by logical operations such as &&, ||, or ^^. The valid
 comparison operators are: ==, !=, <=, >=, <, and >. Delimiting spaces are required.
 Logical operations are processed linearly.
+
+You may insert the relative address of a symbol with a $ or the absolute address
+with a $$. Currently you may refer to LogMessage or HeaderName.#, in which the
+latter the patch must have already been applied. This functionality will be more
+useful later.
 
 The log is created as mod_sharker.log in the Mabinogi folder.
