@@ -112,9 +112,13 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 	len = GetPrivateProfileSectionNames(name_buffer, sizeof(name_buffer), fullname);
 	nbptr = name_buffer;
 	while((len = wcslen(nbptr)) > 0) {
+		// First check if the option is in the current INI.
+		int option = GetPrivateProfileInt(INI_HEADER, nbptr, -1, fullname);
+		// If not, retrieve it from the main INI, defaulting to 1.
+		if(option == -1) option = GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME);
 		// Skip options section.
 		// Check if patch is enabled or missing from options.
-		if(wcscmp(nbptr, INI_HEADER) != 0 && GetPrivateProfileInt(INI_HEADER, nbptr, 1, INI_FILE_NAME) != 0) {
+		if(wcscmp(nbptr, INI_HEADER) != 0 && option != 0) {
 			// That is so. Apply patches.
 			int patch_id = 1, length, rlength, section = 0, j;
 			WCHAR key_name[20], condition_buffer[2000], section_buffer[30], search_buffer[2000], replace_buffer[2000];
@@ -219,7 +223,7 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 				swprintf(key_name, sizeof(key_name), L"Search%i", patch_id);
 				if(GetPrivateProfileString(nbptr, key_name, NULL, search_buffer, sizeof(search_buffer), fullname)) {
 					// There is a patch of this ID. We must parse it and the replacement then patch the client's memory.
-					if((length = ParseHex(search_buffer, search_binary, nbptr)) < 0) {
+					if((length = ParseHex(search_buffer, search_binary, fullname, nbptr)) < 0) {
 						LogMessage(L"Error parsing search code for %s.%s at index %i.", nbptr, key_name, -length);
 						continue;
 					}
@@ -230,7 +234,7 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 						DWORD has_replacement;
 						swprintf(key_name, sizeof(key_name), L"Replace%i", patch_id);
 						if((has_replacement = GetPrivateProfileString(nbptr, key_name, NULL, replace_buffer, sizeof(replace_buffer), fullname))) {
-							if((rlength = ParseHex(replace_buffer, replace_binary, nbptr, (unsigned int)address)) < 0) {
+							if((rlength = ParseHex(replace_buffer, replace_binary, fullname, nbptr, (unsigned int)address)) < 0) {
 								LogMessage(L"Error parsing replacement code for %s.%s at index %i.", nbptr, key_name, -rlength);
 								continue;
 							}
@@ -265,7 +269,7 @@ void LoadINI(LPCTSTR filename, LPCTSTR folder) {
 	return -(begin - orig);\
 }
 
-int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_address, int *from_change) {
+int ParseHex(WCHAR *from, signed short *to, WCHAR *file, WCHAR *title, unsigned int starting_address, int *from_change) {
 	WCHAR *orig = from, hex[] = L"\0\0", *error_point;
 	signed short *orig_to = to;
 	for(; *from != L'\0'; ++from) {
@@ -351,8 +355,8 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 			// ID is the index of the wildcard within that line, based at 0. If omitted, 0 is assumed.
 			// C is the number of wildcards to read. If omitted, Size is used.
 			// The wildcards read from Search do not have to be sequential, so be wary.
-			WCHAR *begin = from, name[50], *p, sizebuf[10];
 			int value, size;
+			WCHAR *begin = from, _name[50], *name = _name, *p, sizebuf[10];
 
 			// Name ends at : only.
 			for(p = name, ++from; *from != L':' && *from != L'\0'; ++from, ++p) *p = *from;
@@ -369,8 +373,9 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 			CHECK_UNEXPECTED_END
 
 			// Fetch the value from the name. If it exists, check mapping or offset.
-			if(*name != L'\0') value = GetPrivateProfileInt(INI_HEADER, name, -1, INI_FILE_NAME);
-			else value = GetPrivateProfileInt(INI_HEADER, title, -1, INI_FILE_NAME);
+			if(*name == L'\0') name = title;
+			value = GetPrivateProfileInt(INI_HEADER, name, -1, file);
+			if(value == -1) value = GetPrivateProfileInt(INI_HEADER, name, -1, INI_FILE_NAME);
 
 			if(value > -1) {
 				if(wcsncmp(from, L"map", 3) == 0) {
@@ -395,7 +400,7 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 						// Collect "to" number.
 						if(*from == L'x' || *from == L'X') {
 							// Hex form, sequence of bytes.
-							int from_change, tmp = ParseHex(++from, to, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
+							int from_change, tmp = ParseHex(++from, to, file, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
 							if(tmp < 0) {
 								return tmp - (from - orig);
 							}
@@ -435,7 +440,7 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 
 					// Check if a mapping was found.
 					if(unfound) {
-						LogMessage(L"Not a valid option for %s, please see the mod's documentation.", *name == L'\0' ? title : name);
+						LogMessage(L"Not a valid option for %s, please see the mod's documentation.", name);
 						return -(begin - orig);
 					}
 				}
@@ -466,7 +471,7 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 
 				// If there is no default given...
 				if(*from == L'\0') {
-					LogMessage(L"You must enter a value for %s, see documentation.", *name == L'\0' ? title : name);
+					LogMessage(L"You must enter a value for %s, see documentation.", name);
 					return -(begin - orig);
 				}
 
@@ -476,7 +481,7 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *title, unsigned int starting_
 				// Collect default value.
 				if(*from == L'x' || *from == L'X') {
 					// Hex form, sequence of bytes.
-					int from_change = 0, tmp = ParseHex(++from, to, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
+					int from_change = 0, tmp = ParseHex(++from, to, file, title, starting_address ? starting_address + (to - orig_to) : 0, &from_change);
 					if(tmp < 0) {
 						return tmp - (from - orig);
 					}

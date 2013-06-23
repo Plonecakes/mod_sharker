@@ -19,7 +19,9 @@ also easily share their patch with others.
 Included is an example configuration, that is hopefully straight-forward.
 
 In the main ini, mod_sharker.ini, there is an [Options] section which, underneath,
-stores the options for the mod. Every other header is considered a patch.
+stores the options for the mod. Every other header is considered a patch. You may
+specifify an [Options] header for other INIs as well, but only with respect to the
+mods that INI includes.
 
 In the options, you may enable or disable a mod, by name, similar to any memory
 patch. If there is no entry for the patch, it is assumed to be on.
