@@ -52,8 +52,8 @@ The format is one of:
   {1: x02 00 00 00, 3: x04 00 00 00}
 Spaces are optional, of course. The left value is the value the user enters, and
 the right value is the value searched for or written. Offset is a value to offset
-by, and the ? in the format must be a method of adjustment, + or -. Again, this
-value is in decimal. An example might be:
+by, and the ? in the format must be a method of adjustment, + or - or *. Again,
+this value is in decimal. An example might be:
   <UserInput:4 map {1:2,2:34} or 2>
 Where the entry in UserInput will be referenced for the final value that this
 segment is replaced with. If the user enteres UserInput=1 then the value will be

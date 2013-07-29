@@ -455,6 +455,7 @@ int ParseHex(WCHAR *from, signed short *to, WCHAR *file, WCHAR *title, unsigned 
 					// Apply offset.
 					if(sign == L'-') value -= _wtoi(offset);
 					else if(sign == L'+') value += _wtoi(offset);
+					else if(sign == L'*') value *= _wtoi(offset);
 					else {
 						LogMessage(L"Unknown offset method %c.", sign);
 						return -(begin - orig);

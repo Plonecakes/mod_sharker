@@ -2,7 +2,7 @@
 #include "logging.h"
 
 static char* const LOG_FILE_NAME = "mod_sharker.log";
-static const wchar_t LOG_BEGIN[] = L"\ufeffmod_sharker version 2.3 by Plonecakes\nLog file begin\r\n";
+static const wchar_t LOG_BEGIN[] = L"\ufeffmod_sharker version 2.4 by Plonecakes\nLog file begin\r\n";
 
 FILE *log_file = NULL;
 void BeginLog() {
